@@ -12,6 +12,11 @@ screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Russian Student Simulator: The Race to the Lecture")
 clock = pygame.time.Clock()
 IS_WEB = sys.platform == "emscripten"
+IS_TOUCH_WEB = False
+if IS_WEB:
+    import platform
+
+    IS_TOUCH_WEB = int(platform.window.navigator.maxTouchPoints or 0) > 0
 
 font_big = pygame.font.SysFont("arial", 44)
 font_medium = pygame.font.SysFont("arial", 28)
@@ -936,7 +941,7 @@ def release_mobile_control(name):
 
 
 def draw_mobile_controls():
-    if not IS_WEB:
+    if not IS_TOUCH_WEB:
         return
 
     labels = {
@@ -1808,7 +1813,7 @@ async def main():
             if event.type == pygame.QUIT:
                 running = False
 
-            if IS_WEB and event.type == pygame.FINGERDOWN:
+            if IS_TOUCH_WEB and event.type == pygame.FINGERDOWN:
                 last_finger_event = pygame.time.get_ticks()
                 position = (round(event.x * WIDTH), round(event.y * HEIGHT))
                 control = mobile_control_at(position)
@@ -1816,7 +1821,7 @@ async def main():
                     active_finger_controls[event.finger_id] = control
                     press_mobile_control(control)
 
-            if IS_WEB and event.type == pygame.FINGERMOTION:
+            if IS_TOUCH_WEB and event.type == pygame.FINGERMOTION:
                 last_finger_event = pygame.time.get_ticks()
                 position = (round(event.x * WIDTH), round(event.y * HEIGHT))
                 old_control = active_finger_controls.get(event.finger_id)
@@ -1830,14 +1835,14 @@ async def main():
                     else:
                         active_finger_controls.pop(event.finger_id, None)
 
-            if IS_WEB and event.type == pygame.FINGERUP:
+            if IS_TOUCH_WEB and event.type == pygame.FINGERUP:
                 last_finger_event = pygame.time.get_ticks()
                 control = active_finger_controls.pop(event.finger_id, None)
                 if control:
                     release_mobile_control(control)
 
             if (
-                IS_WEB
+                IS_TOUCH_WEB
                 and event.type == pygame.MOUSEBUTTONDOWN
                 and event.button == 1
                 and pygame.time.get_ticks() - last_finger_event > 500
@@ -1847,7 +1852,11 @@ async def main():
                     active_finger_controls["mouse"] = control
                     press_mobile_control(control)
 
-            if IS_WEB and event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            if (
+                IS_TOUCH_WEB
+                and event.type == pygame.MOUSEBUTTONUP
+                and event.button == 1
+            ):
                 control = active_finger_controls.pop("mouse", None)
                 if control:
                     release_mobile_control(control)
