@@ -19,7 +19,6 @@ cp -R assets "$STAGE_APP/assets"
 python optimize_web_assets.py "$STAGE_APP/assets"
 
 python -m pygbag --build "$STAGE_APP/main.py"
-rm -f "$STAGE_APP/build/web/russian_student_simulator.tar.gz"
 
 rm -rf build/web
 mkdir -p build
