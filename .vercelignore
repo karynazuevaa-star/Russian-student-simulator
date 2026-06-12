@@ -1,0 +1,10 @@
+.venv-build
+.venv-web
+.web-stage
+build
+dist
+__pycache__
+*.pyc
+*.spec
+*.zip
+*_preview.png
