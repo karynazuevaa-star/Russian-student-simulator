@@ -29,10 +29,10 @@ mobile_control_rects = {
     "left": pygame.Rect(15, 487, 56, 56),
     "down": pygame.Rect(72, 487, 56, 56),
     "right": pygame.Rect(129, 487, 56, 56),
-    "act": pygame.Rect(775, 470, 110, 55),
-    "next": pygame.Rect(775, 470, 110, 55),
-    "back": pygame.Rect(680, 535, 95, 45),
-    "restart": pygame.Rect(785, 535, 100, 45),
+    "act": pygame.Rect(15, 370, 80, 48),
+    "back": pygame.Rect(105, 370, 80, 48),
+    "next": pygame.Rect(15, 370, 170, 48),
+    "restart": pygame.Rect(15, 370, 170, 48),
 }
 
 
