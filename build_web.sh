@@ -18,7 +18,8 @@ cp main.py "$STAGE_APP/main.py"
 cp -R assets "$STAGE_APP/assets"
 python optimize_web_assets.py "$STAGE_APP/assets"
 
-python -m pygbag --build "$STAGE_APP/main.py"
+python -m pygbag --build --width 900 --height 600 "$STAGE_APP/main.py"
+python customize_web_index.py "$STAGE_APP/build/web/index.html"
 
 rm -rf build/web
 mkdir -p build

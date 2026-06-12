@@ -11,6 +11,7 @@ HEIGHT = 600
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Russian Student Simulator: The Race to the Lecture")
 clock = pygame.time.Clock()
+IS_WEB = sys.platform == "emscripten"
 
 font_big = pygame.font.SysFont("arial", 44)
 font_medium = pygame.font.SysFont("arial", 28)
@@ -19,6 +20,20 @@ font_label = pygame.font.SysFont("arial", 16)
 
 ASSET_DIR = Path(__file__).parent / "assets"
 SUBTITLE_DURATION = 2300
+virtual_directions = set()
+active_finger_controls = {}
+last_finger_event = -1000
+
+mobile_control_rects = {
+    "up": pygame.Rect(72, 430, 56, 56),
+    "left": pygame.Rect(15, 487, 56, 56),
+    "down": pygame.Rect(72, 487, 56, 56),
+    "right": pygame.Rect(129, 487, 56, 56),
+    "act": pygame.Rect(775, 470, 110, 55),
+    "next": pygame.Rect(775, 470, 110, 55),
+    "back": pygame.Rect(680, 535, 95, 45),
+    "restart": pygame.Rect(785, 535, 100, 45),
+}
 
 
 def load_trimmed_image(filename):
@@ -803,6 +818,178 @@ def event_matches_key(event, key, characters):
     return event.key == key or event.unicode.lower() in characters
 
 
+def movement_pressed(keys, key, direction):
+    return keys[key] or direction in virtual_directions
+
+
+def advance_scene():
+    global game_state, cutscene_started_at
+
+    if game_state == "intro":
+        game_state = "home_intro"
+        cutscene_started_at = pygame.time.get_ticks()
+    elif game_state == "home_intro":
+        game_state = "home"
+    elif game_state == "home_complete":
+        game_state = "exit_cutscene"
+        cutscene_started_at = pygame.time.get_ticks()
+    elif game_state == "exit_cutscene":
+        game_state = "outside_cutscene"
+        cutscene_started_at = pygame.time.get_ticks()
+    elif game_state == "outside_cutscene":
+        game_state = "travel_cutscene"
+        cutscene_started_at = pygame.time.get_ticks()
+    elif game_state == "travel_cutscene":
+        game_state = "street_intro"
+        cutscene_started_at = pygame.time.get_ticks()
+    elif game_state == "street_intro":
+        enter_street()
+    elif game_state == "university_entrance_cutscene":
+        game_state = "university_entrance2_cutscene"
+        cutscene_started_at = pygame.time.get_ticks()
+    elif game_state == "university_entrance2_cutscene":
+        game_state = "university_intro"
+        cutscene_started_at = pygame.time.get_ticks()
+    elif game_state == "university_intro":
+        enter_university()
+    elif game_state == "dean_cutscene":
+        game_state = "dean_game_over"
+
+
+def interact():
+    global game_state, cutscene_started_at, message
+    global bus_used, bus_wait_started_at, university_card_shown
+    global jacket_checked, university_message
+
+    if game_state == "home" and player.colliderect(exit_door):
+        if has_student_card and has_backpack and has_jacket and has_energy_drink:
+            game_state = "exit_cutscene"
+            cutscene_started_at = pygame.time.get_ticks()
+        else:
+            message = "You forgot something!"
+    elif game_state == "street" and street_player.colliderect(university_entrance):
+        game_state = "university_entrance_cutscene"
+        cutscene_started_at = pygame.time.get_ticks()
+        university_card_shown = False
+        jacket_checked = False
+    elif game_state == "street" and street_player.colliderect(bus_stop) and not bus_used:
+        bus_used = True
+        bus_wait_started_at = pygame.time.get_ticks()
+        game_state = "bus_wait"
+    elif game_state == "university":
+        if university_player.colliderect(guard_zone) and not university_card_shown:
+            university_card_shown = True
+            university_message = "The guard checked your student card."
+        elif university_player.colliderect(cloakroom_zone) and not jacket_checked:
+            jacket_checked = True
+            university_message = "Your winter jacket is in the cloakroom."
+        elif university_player.colliderect(lecture_entrance):
+            if university_card_shown and jacket_checked:
+                game_state = "victory"
+            else:
+                university_message = "Complete both entrance tasks first."
+
+
+def visible_mobile_controls():
+    controls = []
+    if game_state in ("home", "street", "university"):
+        controls.extend(("up", "left", "down", "right", "act"))
+    elif game_state in (
+        "intro", "home_intro", "home_complete", "exit_cutscene",
+        "outside_cutscene", "travel_cutscene", "street_intro",
+        "university_entrance_cutscene", "university_entrance2_cutscene",
+        "university_intro", "dean_cutscene",
+    ):
+        controls.append("next")
+
+    if game_state not in (
+        "intro", "game_over", "dean_cutscene", "dean_game_over", "victory"
+    ):
+        controls.append("back")
+    if game_state in ("game_over", "dean_game_over", "victory"):
+        controls.append("restart")
+    return controls
+
+
+def mobile_control_at(position):
+    for name in visible_mobile_controls():
+        if mobile_control_rects[name].collidepoint(position):
+            return name
+    return None
+
+
+def press_mobile_control(name):
+    if name in ("up", "left", "down", "right"):
+        virtual_directions.add(name)
+    elif name == "act":
+        interact()
+    elif name == "next":
+        advance_scene()
+    elif name == "back":
+        go_back()
+    elif name == "restart":
+        reset_game()
+
+
+def release_mobile_control(name):
+    virtual_directions.discard(name)
+
+
+def draw_mobile_controls():
+    if not IS_WEB:
+        return
+
+    labels = {
+        "act": "ACT",
+        "next": "NEXT",
+        "back": "BACK",
+        "restart": "RESTART",
+    }
+    overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+    for name in visible_mobile_controls():
+        rect = mobile_control_rects[name]
+        pressed = name in virtual_directions
+        pygame.draw.rect(
+            overlay, (30, 35, 45, 205 if pressed else 155), rect,
+            border_radius=12
+        )
+        pygame.draw.rect(
+            overlay, (255, 235, 150, 210), rect, 2, border_radius=12
+        )
+        if name in ("up", "left", "down", "right"):
+            center_x, center_y = rect.center
+            arrow_points = {
+                "up": [
+                    (center_x, center_y - 13),
+                    (center_x - 13, center_y + 10),
+                    (center_x + 13, center_y + 10),
+                ],
+                "left": [
+                    (center_x - 13, center_y),
+                    (center_x + 10, center_y - 13),
+                    (center_x + 10, center_y + 13),
+                ],
+                "down": [
+                    (center_x, center_y + 13),
+                    (center_x - 13, center_y - 10),
+                    (center_x + 13, center_y - 10),
+                ],
+                "right": [
+                    (center_x + 13, center_y),
+                    (center_x - 10, center_y - 13),
+                    (center_x - 10, center_y + 13),
+                ],
+            }
+            pygame.draw.polygon(
+                overlay, (255, 250, 220), arrow_points[name]
+            )
+            continue
+        label_font = font_small if len(labels[name]) <= 4 else font_label
+        label = label_font.render(labels[name], True, (255, 250, 220))
+        overlay.blit(label, label.get_rect(center=rect.center))
+    screen.blit(overlay, (0, 0))
+
+
 def draw_centered_text(text, center_y, font, color=(255, 255, 255)):
     image = font.render(text, True, color)
     screen.blit(image, image.get_rect(center=(WIDTH // 2, center_y)))
@@ -1061,19 +1248,19 @@ def move_player():
     keys = pygame.key.get_pressed()
     player_moving = False
 
-    if keys[pygame.K_LEFT]:
+    if movement_pressed(keys, pygame.K_LEFT, "left"):
         player.x -= player_speed
         player_direction = "left"
         player_moving = True
-    if keys[pygame.K_RIGHT]:
+    if movement_pressed(keys, pygame.K_RIGHT, "right"):
         player.x += player_speed
         player_direction = "right"
         player_moving = True
-    if keys[pygame.K_UP]:
+    if movement_pressed(keys, pygame.K_UP, "up"):
         player.y -= player_speed
         player_direction = "up"
         player_moving = True
-    if keys[pygame.K_DOWN]:
+    if movement_pressed(keys, pygame.K_DOWN, "down"):
         player.y += player_speed
         player_direction = "down"
         player_moving = True
@@ -1142,19 +1329,19 @@ def move_street_player():
     dx = 0
     dy = 0
     street_player_moving = False
-    if keys[pygame.K_LEFT]:
+    if movement_pressed(keys, pygame.K_LEFT, "left"):
         dx -= player_speed
         street_player_direction = "left"
         street_player_moving = True
-    if keys[pygame.K_RIGHT]:
+    if movement_pressed(keys, pygame.K_RIGHT, "right"):
         dx += player_speed
         street_player_direction = "right"
         street_player_moving = True
-    if keys[pygame.K_UP]:
+    if movement_pressed(keys, pygame.K_UP, "up"):
         dy -= player_speed
         street_player_direction = "up"
         street_player_moving = True
-    if keys[pygame.K_DOWN]:
+    if movement_pressed(keys, pygame.K_DOWN, "down"):
         dy += player_speed
         street_player_direction = "down"
         street_player_moving = True
@@ -1428,19 +1615,19 @@ def move_university_player():
     dx = 0
     dy = 0
     university_player_moving = False
-    if keys[pygame.K_LEFT]:
+    if movement_pressed(keys, pygame.K_LEFT, "left"):
         dx -= player_speed
         university_player_direction = "left"
         university_player_moving = True
-    if keys[pygame.K_RIGHT]:
+    if movement_pressed(keys, pygame.K_RIGHT, "right"):
         dx += player_speed
         university_player_direction = "right"
         university_player_moving = True
-    if keys[pygame.K_UP]:
+    if movement_pressed(keys, pygame.K_UP, "up"):
         dy -= player_speed
         university_player_direction = "up"
         university_player_moving = True
-    if keys[pygame.K_DOWN]:
+    if movement_pressed(keys, pygame.K_DOWN, "down"):
         dy += player_speed
         university_player_direction = "down"
         university_player_moving = True
@@ -1613,13 +1800,58 @@ async def main():
     global street_last_hit_time, street_message, street_safe_position
     global university_last_hit_time, university_message
     global university_safe_position
+    global last_finger_event
 
     running = True
     while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-    
+
+            if IS_WEB and event.type == pygame.FINGERDOWN:
+                last_finger_event = pygame.time.get_ticks()
+                position = (round(event.x * WIDTH), round(event.y * HEIGHT))
+                control = mobile_control_at(position)
+                if control:
+                    active_finger_controls[event.finger_id] = control
+                    press_mobile_control(control)
+
+            if IS_WEB and event.type == pygame.FINGERMOTION:
+                last_finger_event = pygame.time.get_ticks()
+                position = (round(event.x * WIDTH), round(event.y * HEIGHT))
+                old_control = active_finger_controls.get(event.finger_id)
+                new_control = mobile_control_at(position)
+                if old_control != new_control:
+                    if old_control:
+                        release_mobile_control(old_control)
+                    if new_control:
+                        active_finger_controls[event.finger_id] = new_control
+                        press_mobile_control(new_control)
+                    else:
+                        active_finger_controls.pop(event.finger_id, None)
+
+            if IS_WEB and event.type == pygame.FINGERUP:
+                last_finger_event = pygame.time.get_ticks()
+                control = active_finger_controls.pop(event.finger_id, None)
+                if control:
+                    release_mobile_control(control)
+
+            if (
+                IS_WEB
+                and event.type == pygame.MOUSEBUTTONDOWN
+                and event.button == 1
+                and pygame.time.get_ticks() - last_finger_event > 500
+            ):
+                control = mobile_control_at(event.pos)
+                if control:
+                    active_finger_controls["mouse"] = control
+                    press_mobile_control(control)
+
+            if IS_WEB and event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                control = active_finger_controls.pop("mouse", None)
+                if control:
+                    release_mobile_control(control)
+
             if event.type == pygame.KEYDOWN:
                 if event_matches_key(event, pygame.K_b, ("b", "и")):
                     go_back()
@@ -1628,66 +1860,12 @@ async def main():
                     "game_over", "dean_game_over", "victory"
                 ):
                     reset_game()
-    
+
                 if event.key == pygame.K_SPACE:
-                    if game_state == "intro":
-                        game_state = "home_intro"
-                        cutscene_started_at = pygame.time.get_ticks()
-                    elif game_state == "home_intro":
-                        game_state = "home"
-                    elif game_state == "home_complete":
-                        game_state = "exit_cutscene"
-                        cutscene_started_at = pygame.time.get_ticks()
-                    elif game_state == "exit_cutscene":
-                        game_state = "outside_cutscene"
-                        cutscene_started_at = pygame.time.get_ticks()
-                    elif game_state == "outside_cutscene":
-                        game_state = "travel_cutscene"
-                        cutscene_started_at = pygame.time.get_ticks()
-                    elif game_state == "travel_cutscene":
-                        game_state = "street_intro"
-                        cutscene_started_at = pygame.time.get_ticks()
-                    elif game_state == "street_intro":
-                        enter_street()
-                    elif game_state == "university_entrance_cutscene":
-                        game_state = "university_entrance2_cutscene"
-                        cutscene_started_at = pygame.time.get_ticks()
-                    elif game_state == "university_entrance2_cutscene":
-                        game_state = "university_intro"
-                        cutscene_started_at = pygame.time.get_ticks()
-                    elif game_state == "university_intro":
-                        enter_university()
-                    elif game_state == "dean_cutscene":
-                        game_state = "dean_game_over"
-    
+                    advance_scene()
+
                 if event.key in (pygame.K_e, pygame.K_RETURN):
-                    if game_state == "home" and player.colliderect(exit_door):
-                        if has_student_card and has_backpack and has_jacket and has_energy_drink:
-                            game_state = "exit_cutscene"
-                            cutscene_started_at = pygame.time.get_ticks()
-                        else:
-                            message = "You forgot something!"
-                    elif game_state == "street" and street_player.colliderect(university_entrance):
-                        game_state = "university_entrance_cutscene"
-                        cutscene_started_at = pygame.time.get_ticks()
-                        university_card_shown = False
-                        jacket_checked = False
-                    elif game_state == "street" and street_player.colliderect(bus_stop) and not bus_used:
-                        bus_used = True
-                        bus_wait_started_at = pygame.time.get_ticks()
-                        game_state = "bus_wait"
-                    elif game_state == "university":
-                        if university_player.colliderect(guard_zone) and not university_card_shown:
-                            university_card_shown = True
-                            university_message = "The guard checked your student card."
-                        elif university_player.colliderect(cloakroom_zone) and not jacket_checked:
-                            jacket_checked = True
-                            university_message = "Your winter jacket is in the cloakroom."
-                        elif university_player.colliderect(lecture_entrance):
-                            if university_card_shown and jacket_checked:
-                                game_state = "victory"
-                            else:
-                                university_message = "Complete both entrance tasks first."
+                    interact()
     
         if game_state == "home":
             move_player()
@@ -1984,6 +2162,7 @@ async def main():
             )
     
         draw_navigation_help()
+        draw_mobile_controls()
         pygame.display.flip()
         clock.tick(60)
         await asyncio.sleep(0)
