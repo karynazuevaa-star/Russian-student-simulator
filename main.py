@@ -36,8 +36,8 @@ mobile_control_rects = {
     "right": pygame.Rect(129, 487, 56, 56),
     "act": pygame.Rect(15, 370, 80, 48),
     "back": pygame.Rect(105, 370, 80, 48),
-    "next": pygame.Rect(15, 370, 170, 48),
-    "restart": pygame.Rect(15, 370, 170, 48),
+    "next": pygame.Rect(785, 535, 100, 45),
+    "restart": pygame.Rect(365, 535, 170, 45),
 }
 
 
@@ -918,9 +918,15 @@ def visible_mobile_controls():
 
 def mobile_control_at(position):
     for name in visible_mobile_controls():
-        if mobile_control_rects[name].collidepoint(position):
+        if mobile_control_rect(name).collidepoint(position):
             return name
     return None
+
+
+def mobile_control_rect(name):
+    if name == "back" and game_state not in ("home", "street", "university"):
+        return pygame.Rect(15, 535, 100, 45)
+    return mobile_control_rects[name]
 
 
 def press_mobile_control(name):
@@ -952,7 +958,7 @@ def draw_mobile_controls():
     }
     overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
     for name in visible_mobile_controls():
-        rect = mobile_control_rects[name]
+        rect = mobile_control_rect(name)
         pressed = name in virtual_directions
         pygame.draw.rect(
             overlay, (30, 35, 45, 205 if pressed else 155), rect,
@@ -1011,6 +1017,12 @@ def draw_info_card(title, lines, footer):
     for line in lines:
         draw_centered_text(line, line_y, font_small, (240, 240, 235))
         line_y += 40
+    if IS_TOUCH_WEB:
+        footer = (
+            "Tap NEXT to start"
+            if "start" in footer.lower()
+            else "Tap NEXT to continue"
+        )
     draw_centered_text(footer, 475, font_medium, (255, 225, 145))
 
 
@@ -1023,7 +1035,8 @@ def draw_cutscene_subtitle(text):
     panel_rect = text_image.get_rect()
     panel_rect.width += 50
     panel_rect.height += 24
-    panel_rect.midbottom = (WIDTH // 2, HEIGHT - 48)
+    bottom_margin = 75 if IS_TOUCH_WEB else 48
+    panel_rect.midbottom = (WIDTH // 2, HEIGHT - bottom_margin)
     panel = pygame.Surface(panel_rect.size, pygame.SRCALPHA)
     panel.fill((12, 15, 20, 190))
     screen.blit(panel, panel_rect)
@@ -1133,6 +1146,8 @@ def go_back():
 
 
 def draw_navigation_help():
+    if IS_TOUCH_WEB:
+        return
     if game_state not in (
         "intro", "game_over", "dean_cutscene", "dean_game_over", "victory"
     ):
@@ -1383,7 +1398,8 @@ def draw_exit_cutscene():
     image = cover_image(outofhome_image, (WIDTH, HEIGHT))
     screen.blit(image, (0, 0))
     draw_cutscene_subtitle("You finally escaped the apartment.")
-    draw_text("SPACE - skip", 745, 565, font_small, (190, 205, 220))
+    if not IS_TOUCH_WEB:
+        draw_text("SPACE - skip", 745, 565, font_small, (190, 205, 220))
 
 
 def draw_outside_cutscene():
@@ -1437,7 +1453,8 @@ def draw_outside_cutscene():
     )
 
     draw_cutscene_subtitle("The cold hits immediately.")
-    draw_text("SPACE - skip", 745, 565, font_small, (70, 75, 85))
+    if not IS_TOUCH_WEB:
+        draw_text("SPACE - skip", 745, 565, font_small, (70, 75, 85))
 
 
 def draw_travel_cutscene():
@@ -1456,7 +1473,8 @@ def draw_travel_cutscene():
     )
 
     draw_cutscene_subtitle("The city is already moving.")
-    draw_text("SPACE - skip", 745, 565, font_small, (210, 220, 230))
+    if not IS_TOUCH_WEB:
+        draw_text("SPACE - skip", 745, 565, font_small, (210, 220, 230))
 
 
 def draw_street():
@@ -1701,7 +1719,8 @@ def draw_university_entrance_cutscene(image, caption):
     scene = cover_image(image, (WIDTH, HEIGHT))
     screen.blit(scene, (0, 0))
     draw_cutscene_subtitle(caption)
-    draw_text("SPACE - skip", 745, 565, font_small, (220, 225, 230))
+    if not IS_TOUCH_WEB:
+        draw_text("SPACE - skip", 745, 565, font_small, (220, 225, 230))
 
 
 def draw_dean_cutscene():
