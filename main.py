@@ -304,6 +304,12 @@ full_university_image = pygame.image.load(
 outofhome_image = pygame.image.load(
     ASSET_DIR / "scene" / "outofhome.png"
 ).convert()
+bus_wait_image = pygame.image.load(
+    ASSET_DIR / "scene" / "bus1.png"
+).convert()
+bus_broken_image = pygame.image.load(
+    ASSET_DIR / "scene" / "bus2.png"
+).convert()
 before_second_place_image = pygame.image.load(
     ASSET_DIR / "scene" / "beforesecomdplace.png"
 ).convert()
@@ -401,7 +407,6 @@ last_hit_time = 0
 cutscene_started_at = 0
 street_message = ""
 street_last_hit_time = 0
-bus_wait_started_at = 0
 bus_used = False
 ice_zones_triggered = set()
 university_message = ""
@@ -828,7 +833,8 @@ def movement_pressed(keys, key, direction):
 
 
 def advance_scene():
-    global game_state, cutscene_started_at
+    global game_state, cutscene_started_at, time_left
+    global street_message, street_safe_position
 
     if game_state == "intro":
         game_state = "home_intro"
@@ -849,6 +855,14 @@ def advance_scene():
         cutscene_started_at = pygame.time.get_ticks()
     elif game_state == "street_intro":
         enter_street()
+    elif game_state == "bus_wait":
+        time_left -= 4
+        street_message = "The bus broke down. You lost 4 min."
+        game_state = "bus_broken"
+        cutscene_started_at = pygame.time.get_ticks()
+    elif game_state == "bus_broken":
+        street_safe_position = street_player.topleft
+        game_state = "street" if time_left > 0 else "game_over"
     elif game_state == "university_entrance_cutscene":
         game_state = "university_entrance2_cutscene"
         cutscene_started_at = pygame.time.get_ticks()
@@ -863,7 +877,7 @@ def advance_scene():
 
 def interact():
     global game_state, cutscene_started_at, message
-    global bus_used, bus_wait_started_at, university_card_shown
+    global bus_used, university_card_shown
     global jacket_checked, university_message
 
     if game_state == "home" and player.colliderect(exit_door):
@@ -879,7 +893,6 @@ def interact():
         jacket_checked = False
     elif game_state == "street" and street_player.colliderect(bus_stop) and not bus_used:
         bus_used = True
-        bus_wait_started_at = pygame.time.get_ticks()
         game_state = "bus_wait"
     elif game_state == "university":
         if university_player.colliderect(guard_zone) and not university_card_shown:
@@ -902,6 +915,7 @@ def visible_mobile_controls():
     elif game_state in (
         "intro", "home_intro", "home_complete", "exit_cutscene",
         "outside_cutscene", "travel_cutscene", "street_intro",
+        "bus_wait", "bus_broken",
         "university_entrance_cutscene", "university_entrance2_cutscene",
         "university_intro", "dean_cutscene",
     ):
@@ -1073,7 +1087,7 @@ def reset_people(people, initial_states):
 def reset_game():
     global game_state, time_left, message, last_hit_time
     global cutscene_started_at, street_message, street_last_hit_time
-    global bus_wait_started_at, bus_used, university_message
+    global bus_used, university_message
     global university_last_hit_time, street_safe_position
     global university_safe_position, has_student_card, has_backpack
     global has_jacket, has_energy_drink, university_card_shown
@@ -1086,7 +1100,6 @@ def reset_game():
     cutscene_started_at = 0
     street_message = ""
     street_last_hit_time = 0
-    bus_wait_started_at = 0
     bus_used = False
     ice_zones_triggered.clear()
     university_message = ""
@@ -1132,6 +1145,9 @@ def go_back():
         game_state = "street"
         bus_used = False
         street_player.topleft = street_safe_position
+    elif game_state == "bus_broken":
+        game_state = "street"
+        street_safe_position = street_player.topleft
     elif game_state in (
         "university_entrance_cutscene",
         "university_entrance2_cutscene",
@@ -1615,14 +1631,11 @@ def draw_street():
                   (255, 245, 120))
 
 
-def draw_bus_wait():
-    draw_street()
-    elapsed = pygame.time.get_ticks() - bus_wait_started_at
-    dots = "." * ((elapsed // 450) % 4)
-    pygame.draw.rect(screen, (35, 45, 60), (205, 225, 490, 145))
-    pygame.draw.rect(screen, (190, 205, 220), (205, 225, 490, 145), 3)
-    draw_text("Waiting for the bus" + dots, 300, 255, font_medium)
-    draw_text("Maybe this will save some time...", 275, 315, font_small)
+def draw_bus_cutscene(image, subtitle):
+    screen.blit(cover_image(image, (WIDTH, HEIGHT)), (0, 0))
+    draw_cutscene_subtitle(subtitle)
+    if not IS_TOUCH_WEB:
+        draw_text("SPACE - continue", 700, 565, font_small, (220, 225, 235))
 
 
 def university_hits_obstacle(rect):
@@ -1818,7 +1831,7 @@ def draw_university():
 
 async def main():
     global game_state, cutscene_started_at, message
-    global bus_used, bus_wait_started_at, university_card_shown
+    global bus_used, university_card_shown
     global jacket_checked, has_student_card, has_backpack
     global has_jacket, has_energy_drink, time_left, last_hit_time
     global street_last_hit_time, street_message, street_safe_position
@@ -1966,13 +1979,6 @@ async def main():
     
             if time_left <= 0:
                 game_state = "game_over"
-    
-        elif game_state == "bus_wait":
-            if pygame.time.get_ticks() - bus_wait_started_at >= 2600:
-                time_left -= 4
-                street_message = "The bus broke down. You lost 4 min."
-                street_safe_position = street_player.topleft
-                game_state = "street" if time_left > 0 else "game_over"
     
         elif game_state == "university":
             move_university_player()
@@ -2134,7 +2140,16 @@ async def main():
             draw_street()
     
         elif game_state == "bus_wait":
-            draw_bus_wait()
+            draw_bus_cutscene(
+                bus_wait_image,
+                "You wait at the bus stop, hoping to save time.",
+            )
+
+        elif game_state == "bus_broken":
+            draw_bus_cutscene(
+                bus_broken_image,
+                "Time passes... but the bus breaks down. You lose 4 minutes.",
+            )
     
         elif game_state == "university_entrance_cutscene":
             draw_university_entrance_cutscene(
